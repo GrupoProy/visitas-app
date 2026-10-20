@@ -1,0 +1,12 @@
+PORT=4001
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=user_visitas
+DB_PASSWORD=V1s1t45.2026!
+DB_NAME=basedatos_rrhh
+DB_SCHEMA=visitasdb
+JWT_SECRET=cambia_esto_por_un_secreto_largo_y_aleatorio
+JWT_EXPIRES=30m
+JWT_REFRESH_SECRET=<cadena aleatoria 64+ chars DISTINTA>
+JWT_REFRESH_EXPIRES=7d
+JWT_REFRESH_RECORDAR_EXPIRES=30d

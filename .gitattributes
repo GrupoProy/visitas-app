@@ -1,0 +1,22 @@
+# Normalizar finales de línea automáticamente
+* text=auto eol=lf
+
+# Scripts de shell y configuración siempre con LF
+*.sh      text eol=lf
+*.sql     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+Dockerfile text eol=lf
+
+# Archivos binarios (imágenes, fuentes) no tocar
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.webp    binary
+*.pdf     binary
+*.woff    binary
+*.woff2   binary
+*.ttf     binary
+*.eot     binary
