@@ -168,7 +168,7 @@ useEstados();
               <div className="hidden h-7 w-px bg-slate-300/70 md:block dark:bg-slate-700" />
               <div className="flex min-w-0 flex-col items-center justify-center px-4 leading-tight">
                 <span className="truncate text-[11px] font-semibold uppercase tracking-widest text-red-800 md:text-xl [text-shadow:0_1px_2px_rgba(255,255,255,5)] dark:text-red-400 dark:[text-shadow:0_1px_2px_rgba(0,0,0,0.4)]">
-                  Vistema de Control de Visitas
+                  Estado Plurinacional de Bolivia
                 </span>
                 <span className="truncate text-[11px] text-slate-700 md:text-xs dark:text-slate-300">
                   Cámara de Senadores

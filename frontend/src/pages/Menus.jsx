@@ -89,54 +89,41 @@ export default function Menus() {
                   <th className="px-4 py-3 text-right">Acción</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-  {matriz.map((m) => (
-    <tr key={m.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
-      {/* Menú y Grupo */}
-      <td className="px-4 py-3">
-        <p className="font-medium text-slate-800 dark:text-slate-100">
-          {m.etiqueta}
-        </p>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {m.grupo}
-        </p>
-      </td>
-
-      {/* Ruta */}
-      <td className="px-4 py-3">
-        <code className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          {m.ruta}
-        </code>
-      </td>
-
-      {/* Checkboxes de Roles */}
-      {roles.map((r) => (
-        <td key={r.id} className="px-4 py-3 text-center">
-          <input
-            type="checkbox"
-            className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600 focus:ring-brand-500 dark:border-slate-600 dark:bg-slate-700 dark:focus:ring-brand-600 dark:focus:ring-offset-slate-900"
-            checked={m.roles.includes(Number(r.id))}
-            onChange={() => toggleRol(m.id, Number(r.id))}
-          />
-        </td>
-      ))}
-
-      {/* Botón Guardar */}
-      <td className="px-4 py-3 text-right">
-        <Button
-          size="sm"
-          onClick={() => guardar(m)}
-          disabled={guardandoId === m.id}
-        >
-          {guardandoId === m.id
-            ? <Loader2 size={14} className="animate-spin" />
-            : <Save size={14} />}
-          Guardar
-        </Button>
-      </td>
-    </tr>
-  ))}
-</tbody>
+              <tbody className="divide-y divide-slate-100">
+                {matriz.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50/70">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800">{m.etiqueta}</p>
+                      <p className="text-xs text-slate-500">{m.grupo}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <code className="rounded bg-slate-100 px-2 py-0.5 text-xs">{m.ruta}</code>
+                    </td>
+                    {roles.map((r) => (
+                      <td key={r.id} className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 cursor-pointer rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                          checked={m.roles.includes(Number(r.id))}
+                          onChange={() => toggleRol(m.id, Number(r.id))}
+                        />
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        onClick={() => guardar(m)}
+                        disabled={guardandoId === m.id}
+                      >
+                        {guardandoId === m.id
+                          ? <Loader2 size={14} className="animate-spin" />
+                          : <Save size={14} />}
+                        Guardar
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         </Card>

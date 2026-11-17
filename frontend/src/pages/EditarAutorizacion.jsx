@@ -25,16 +25,11 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
   const [enviando, setEnviando] = useState(false);
   const [conflicto, setConflicto] = useState(null);
 
-  // Estados de excepción
-  const [esExcepcion, setEsExcepcion] = useState(false);
-  const [motivoExcepcion, setMotivoExcepcion] = useState('');
-
   const cfgSafe = useMemo(
     () => ({
       HORARIO_VISITA_INICIO: cfg.HORARIO_VISITA_INICIO || '08:30',
       HORARIO_VISITA_FIN: cfg.HORARIO_VISITA_FIN || '16:30',
       DIAS_VISITA_PERMITIDOS: cfg.DIAS_VISITA_PERMITIDOS || [1, 2, 3, 4, 5],
-      DURACION_MAX_VISITA_HORAS: cfg.DURACION_MAX_VISITA_HORAS || 12,
     }),
     [cfg]
   );
@@ -46,26 +41,6 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
     const pad = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
-
-  // ⭐ Calcular si requiere excepción (para habilitar el checkbox)
-  const requiereExcepcion = useMemo(() => {
-    if (!form.fecha_inicio || !form.fecha_fin) return false;
-    
-    const ini = new Date(form.fecha_inicio);
-    const fin = new Date(form.fecha_fin);
-    
-    const [hIni, mIni] = cfgSafe.HORARIO_VISITA_INICIO.split(':').map(Number);
-    const [hFin, mFin] = cfgSafe.HORARIO_VISITA_FIN.split(':').map(Number);
-    const iniMinutos = ini.getHours() * 60 + ini.getMinutes();
-    const finMinutos = fin.getHours() * 60 + fin.getMinutes();
-    
-    const fueraDeHorario = iniMinutos < (hIni * 60 + mIni) || finMinutos > (hFin * 60 + mFin);
-
-    const duracionHoras = (fin.getTime() - ini.getTime()) / 3600000;
-    const excedeDuracion = duracionHoras > cfgSafe.DURACION_MAX_VISITA_HORAS;
-
-    return fueraDeHorario || excedeDuracion;
-  }, [form.fecha_inicio, form.fecha_fin, cfgSafe]);
 
   // Cargar catálogos y prellenar formulario
   useEffect(() => {
@@ -85,11 +60,6 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
       fecha_fin: isoToLocalInput(autorizacion.fecha_fin),
       observaciones: autorizacion.observaciones || '',
     });
-
-    // Cargar datos de excepción previa
-    setEsExcepcion(autorizacion.es_excepcion || false);
-    setMotivoExcepcion(autorizacion.motivo_excepcion || '');
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autorizacion]);
 
@@ -134,17 +104,12 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
     if (!form.id_anfitrion) errs.id_anfitrion = 'Selecciona un anfitrión';
     if (!form.motivo.trim()) errs.motivo = 'El motivo es obligatorio';
 
-    // Validar horario solo si NO es excepción
-    if (!esExcepcion) {
-      const errHorario = validarRangoHorario(form.fecha_inicio, form.fecha_fin, {
-        inicio: cfgSafe.HORARIO_VISITA_INICIO,
-        fin: cfgSafe.HORARIO_VISITA_FIN,
-        diasPermitidos: cfgSafe.DIAS_VISITA_PERMITIDOS,
-      });
-      if (errHorario) errs.fecha_inicio = errHorario;
-    } else if (!motivoExcepcion.trim()) {
-      errs.motivoExcepcion = 'Debes explicar el motivo de la excepción';
-    }
+    const errHorario = validarRangoHorario(form.fecha_inicio, form.fecha_fin, {
+      inicio: cfgSafe.HORARIO_VISITA_INICIO,
+      fin: cfgSafe.HORARIO_VISITA_FIN,
+      diasPermitidos: cfgSafe.DIAS_VISITA_PERMITIDOS,
+    });
+    if (errHorario) errs.fecha_inicio = errHorario;
 
     setErrores(errs);
     return Object.keys(errs).length === 0;
@@ -170,8 +135,6 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
         fecha_inicio: new Date(form.fecha_inicio).toISOString(),
         fecha_fin: new Date(form.fecha_fin).toISOString(),
         observaciones: form.observaciones.trim() || null,
-        es_excepcion: esExcepcion,
-        motivo_excepcion: esExcepcion ? motivoExcepcion : null,
       });
       toast.success('Autorización actualizada');
       onCreada?.();
@@ -265,53 +228,6 @@ export default function EditarAutorizacion({ autorizacion, onCreada, onCancel })
             value={form.fecha_fin}
             onChange={(e) => setForm({ ...form, fecha_fin: e.target.value })}
           />
-
-          {/* UI DE EXCEPCIÓN EN EDICIÓN */}
-          {requiereExcepcion && (
-            <div className="md:col-span-2 mt-2">
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 text-amber-600" size={20} />
-                  <div className="flex-1">
-                    <p className="font-semibold text-amber-900">
-                      Esta visita excede los límites permitidos
-                    </p>
-                    <p className="text-xs text-amber-800 mt-1">
-                      Has seleccionado un horario fuera del permitido o una duración mayor a {cfgSafe.DURACION_MAX_VISITA_HORAS} horas.
-                    </p>
-                    
-                    <label className="flex items-center gap-2 mt-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={esExcepcion}
-                        onChange={(e) => {
-                          setEsExcepcion(e.target.checked);
-                          if (!e.target.checked) setMotivoExcepcion('');
-                        }}
-                        className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                      />
-                      <span className="text-sm font-medium text-amber-900">
-                        Autorizar como excepción
-                      </span>
-                    </label>
-
-                    {esExcepcion && (
-                      <div className="mt-3">
-                        <Textarea
-                          label="Motivo de la excepción *"
-                          placeholder="Explica brevemente por qué se autoriza esta excepción..."
-                          rows={2}
-                          value={motivoExcepcion}
-                          onChange={(e) => setMotivoExcepcion(e.target.value)}
-                          error={errores.motivoExcepcion}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           <div className="md:col-span-2">
             <Textarea

@@ -189,9 +189,15 @@ const resolverAnfitrion = async (usuario, payload) => {
 // =============================================================================
 // CREAR
 // =============================================================================
-// =============================================================================
-// CREAR
-// =============================================================================
+/**
+ * Crea una autorización.
+ * Reglas:
+ *  - ⭐ SEGURIDAD: si es solo ANFITRION, el anfitrión es él mismo (desde usuario).
+ *  - Si es ADMIN/OPERADOR, el anfitrión debe existir en el payload.
+ *  - Reutiliza visitante si ya existe (por tipo+documento).
+ *  - Valida fechas, horario, duración y solapamiento.
+ *  - Estado inicial configurable (ESTADO_AUTORIZACION_DEFAULT).
+ */
 export const crear = async (payload, userId) => {
   // 1) Cargar usuario y resolver anfitrión (con guard de seguridad)
   const usuario = await cargarUsuarioCompleto(userId);
@@ -218,7 +224,7 @@ export const crear = async (payload, userId) => {
     throw Object.assign(new Error('fecha_fin debe ser mayor que fecha_inicio'), { status: 400 });
 
   // 4) Validar horario y días permitidos
-  await validarRangoHorario(ini, fin, payload.es_excepcion);
+  await validarRangoHorario(ini, fin);
 
   // 5) Validar solapamiento (visitante)
   await validarSinSolapamiento({
@@ -233,28 +239,15 @@ export const crear = async (payload, userId) => {
   const duracionMin = (fin.getTime() - ini.getTime()) / 60000;
 
   if (duracionMin < minMin)
-    throw Object.assign(new Error(`La duración mínima es ${minMin} minuto(s)`), { status: 400 });
-
-  // ⭐ LÓGICA DE EXCEPCIÓN
-  if (duracionMin > maxHoras * 60) {
-    if (!payload.es_excepcion) {
-      throw Object.assign(
-        new Error(`La duración máxima permitida es ${maxHoras} hora(s). Si necesitas exceder este límite, marca la casilla de excepción y justifica el motivo.`),
-        { status: 400 }
-      );
-    }
-
-    // Validar que el usuario tenga el rol adecuado (ADMIN u OPERADOR)
-    const rolesPermitidos = ['ADMIN', 'OPERADOR'];
-    if (!usuario.roles.some(r => rolesPermitidos.includes(r))) {
-       throw Object.assign(new Error('No tienes permiso para crear autorizaciones excepcionales.'), { status: 403 });
-    }
-
-    // Validar que haya justificado el motivo
-    if (!payload.motivo_excepcion || payload.motivo_excepcion.trim() === '') {
-      throw Object.assign(new Error('El motivo de la excepción es obligatorio.'), { status: 400 });
-    }
-  }
+    throw Object.assign(
+      new Error(`La duración mínima de una visita es ${minMin} minuto(s)`),
+      { status: 400 }
+    );
+  if (duracionMin > maxHoras * 60)
+    throw Object.assign(
+      new Error(`La duración máxima de una visita es ${maxHoras} hora(s)`),
+      { status: 400 }
+    );
 
   // 7) Estado inicial
   const estadoInicial = await getValor('ESTADO_AUTORIZACION_DEFAULT', 'APROBADA');
@@ -264,8 +257,8 @@ export const crear = async (payload, userId) => {
   const { rows } = await query(
     `INSERT INTO autorizacion
        (codigo, id_persona, id_lugar, id_anfitrion, motivo,
-        fecha_inicio, fecha_fin, observaciones, estado, creado_por, es_excepcion, motivo_excepcion)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        fecha_inicio, fecha_fin, observaciones, estado, creado_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      RETURNING *`,
     [
       codigo,
@@ -278,8 +271,6 @@ export const crear = async (payload, userId) => {
       payload.observaciones || null,
       estadoInicial,
       userId,
-      payload.es_excepcion || false,
-      payload.motivo_excepcion || null
     ]
   );
   return rows[0];
@@ -288,6 +279,11 @@ export const crear = async (payload, userId) => {
 // =============================================================================
 // ACTUALIZAR
 // =============================================================================
+/**
+ * Actualiza una autorización existente.
+ * Solo permitido en estados PENDIENTE o APROBADA.
+ * ⭐ SEGURIDAD: si es solo ANFITRION, solo puede editar las suyas.
+ */
 export const actualizar = async (id, datos, userId) => {
   const actual = await obtenerPorId(id);
 
@@ -314,7 +310,7 @@ export const actualizar = async (id, datos, userId) => {
   if (fin <= ini)
     throw Object.assign(new Error('fecha_fin debe ser mayor que fecha_inicio'), { status: 400 });
 
-  await validarRangoHorario(ini, fin, datos.es_excepcion ?? actual.es_excepcion);
+  await validarRangoHorario(ini, fin);
 
   await validarSinSolapamiento({
     idPersona: actual.id_persona,
@@ -328,22 +324,15 @@ export const actualizar = async (id, datos, userId) => {
   const duracionMin = (fin.getTime() - ini.getTime()) / 60000;
 
   if (duracionMin < minMin)
-    throw Object.assign(new Error(`La duración mínima es ${minMin} minuto(s)`), { status: 400 });
-
-  // ⭐ LÓGICA DE EXCEPCIÓN AL ACTUALIZAR
-
-    // Lógica de excepción en actualizar
-  let esExcepcionFinal = actual.es_excepcion || false;
-  let motivoExcepcionFinal = actual.motivo_excepcion || null;
-
-  if (datos.es_excepcion !== undefined) {
-    esExcepcionFinal = datos.es_excepcion;
-    motivoExcepcionFinal = datos.es_excepcion ? datos.motivo_excepcion : null;
-    
-    if (esExcepcionFinal && (!motivoExcepcionFinal || motivoExcepcionFinal.trim() === '')) {
-      throw Object.assign(new Error('El motivo de la excepción es obligatorio.'), { status: 400 });
-    }
-  }
+    throw Object.assign(
+      new Error(`La duración mínima de una visita es ${minMin} minuto(s)`),
+      { status: 400 }
+    );
+  if (duracionMin > maxHoras * 60)
+    throw Object.assign(
+      new Error(`La duración máxima de una visita es ${maxHoras} hora(s)`),
+      { status: 400 }
+    );
 
   const { rows } = await query(
     `UPDATE autorizacion
@@ -353,11 +342,9 @@ export const actualizar = async (id, datos, userId) => {
             fecha_inicio   = $4,
             fecha_fin      = $5,
             observaciones  = COALESCE($6, observaciones),
-            es_excepcion   = $7,
-            motivo_excepcion = $8,
-            modificado_por = $9,
+            modificado_por = $7,
             fecha_modificacion = NOW()
-      WHERE id = $10
+      WHERE id = $8
       RETURNING *`,
     [
       datos.id_lugar ?? null,
@@ -366,8 +353,6 @@ export const actualizar = async (id, datos, userId) => {
       ini,
       fin,
       datos.observaciones ?? null,
-      esExcepcionFinal,
-      motivoExcepcionFinal,
       userId,
       id,
     ]
