@@ -1,10 +1,13 @@
 import clsx from 'clsx';
 
 const variants = {
-  primary:   'bg-emerald-600 hover:bg-emerald-800 text-white shadow-sm',
-  secondary: 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300',
+  // ⭐ Cambiamos el primary al nuevo color institucional
+  primary:   'bg-institucional hover:bg-institucional-hover text-white shadow-sm',
+  
+  secondary: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-600',
+  
   danger:    'bg-red-600 hover:bg-red-700 text-white',
-  ghost:     'bg-transparent hover:bg-slate-100 text-slate-700',
+  ghost:     'bg-transparent hover:bg-slate-100 text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800',
   success:   'bg-emerald-600 hover:bg-emerald-700 text-white',
 };
 

@@ -17,6 +17,16 @@ export default {
           800: '#1c30ae',
           900: '#1c2f89',
         },
+
+        guindo: {
+          DEFAULT: '#441306', // Tono vino tinto (ajústalo si tienes el HEX exacto)
+          dark: '#420B19',
+          light: '#7A1C35',
+        },
+                'institucional': {
+          DEFAULT: '#441306',
+          hover: '#5c1b0a', // Un tono ligeramente más claro para el hover
+        }
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

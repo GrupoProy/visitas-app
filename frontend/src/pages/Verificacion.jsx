@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   ShieldCheck, ScanLine, Loader2, CheckCircle2, XCircle,
   CalendarDays, MapPin, User, Hash, IdCard, ListChecks, ArrowRight,
+  Clock, AlertTriangle
 } from 'lucide-react';
 import { api } from '../api/client';
 import { useToast } from '../components/ui/Toast';
@@ -94,7 +95,9 @@ export default function Verificacion() {
     setError('');
   };
 
+  // ⭐ Lógica de estados visuales
   const permitido = resultado?.resultado === 'PERMITIDO';
+  const enCurso   = resultado?.resultado === 'VISITA_EN_CURSO'; // NUEVO
   const denegado  = resultado?.resultado === 'DENEGADO';
 
   return (
@@ -110,58 +113,8 @@ export default function Verificacion() {
         </p>
       </div>
 
-      {/* ============================================================ */}
-      {/* Selector de modo — comentado temporalmente                    */}
-      {/* Solo se usa "Por documento"                                   */}
-      {/* ============================================================ */}
-      {/*
-      <div className="mx-auto flex max-w-md items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-card">
-        <button
-          onClick={() => { setModo('codigo'); limpiar(); }}
-          className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
-            modo === 'codigo'
-              ? 'bg-brand-600 text-white shadow'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Hash size={16} /> Por código
-        </button>
-        <button
-          onClick={() => { setModo('documento'); limpiar(); }}
-          className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
-            modo === 'documento'
-              ? 'bg-brand-600 text-white shadow'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <IdCard size={16} /> Por documento
-        </button>
-      </div>
-      */}
-
       {/* Formulario: solo documento */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card">
-        {/* 
-        Modo código comentado temporalmente:
-        {modo === 'codigo' ? (
-          <form onSubmit={verificarCodigo} className="flex flex-col gap-3 md:flex-row md:items-end">
-            <div className="flex-1">
-              <Input
-                label="Código de autorización"
-                placeholder="Ej. AUT-XXXX-XXXX"
-                autoFocus
-                maxLength={17}
-                value={codigo}
-                onChange={(e) => setCodigo(e.target.value.toUpperCase())}
-              />
-            </div>
-            <Button type="submit" size="lg" disabled={loading || !codigo.trim()}>
-              {loading && <Loader2 size={16} className="animate-spin" />}
-              Verificar
-            </Button>
-          </form>
-        ) : (
-        */}
           <form onSubmit={verificarDocumento} className="flex flex-col gap-3 md:flex-row md:items-end">
             <div className="md:w-32">
               <Select
@@ -188,7 +141,6 @@ export default function Verificacion() {
               Buscar
             </Button>
           </form>
-        {/* )} */}
       </div>
 
       {/* Errores */}
@@ -223,7 +175,8 @@ export default function Verificacion() {
                       <span className="rounded-md bg-white px-2 py-0.5 font-mono text-xs text-slate-700 ring-1 ring-slate-200">
                         {a.codigo}
                       </span>
-                      <Badge estado={resultado.resultado} tipo="verificacion" />
+                      {/* FIX: a.estado en lugar de resultado.resultado */}
+                      <Badge estado={a.estado} modulo="autorizacion" />
                     </div>
                     <p className="mt-1 text-sm font-medium text-slate-800">{a.lugar}</p>
                     <p className="text-xs text-slate-600">
@@ -252,25 +205,33 @@ export default function Verificacion() {
         </div>
       )}
 
-      {/* Resultado (permitido / denegado) */}
+      {/* Resultado (permitido / visita en curso / denegado) */}
       {resultado && (
         <div
           className={`overflow-hidden rounded-2xl border-2 shadow-card ${
             permitido ? 'border-emerald-500 bg-emerald-50'
+            : enCurso ? 'border-amber-400 bg-amber-50'
             : denegado ? 'border-red-500 bg-red-50'
             : 'border-slate-300 bg-white'
           }`}
         >
           <div className={`flex items-center gap-3 px-6 py-5 ${
             permitido ? 'bg-emerald-600 text-white'
+            : enCurso ? 'bg-amber-500 text-white'
             : denegado ? 'bg-red-600 text-white'
             : 'bg-slate-700 text-white'
           }`}>
-            {permitido ? <CheckCircle2 size={32} /> : <XCircle size={32} />}
+            {/* Icono dinámico */}
+            {permitido ? <CheckCircle2 size={32} /> 
+             : enCurso ? <Clock size={32} /> 
+             : <XCircle size={32} />}
+            
             <div>
-              <h2 className="text-2xl font-bold">{resultado.resultado}</h2>
-              <p className="text-sm opacity-90">
-                Acción: <b>{resultado.motivo}</b>
+              <h2 className="text-2xl font-bold">
+                {permitido ? 'PERMITIDO' : enCurso ? 'VISITA EN CURSO' : 'DENEGADO'}
+              </h2>
+              <p className="text-sm opacity-90 leading-snug">
+                {enCurso ? 'Aviso: ' : 'Acción: '} <b>{resultado.motivo}</b>
               </p>
             </div>
           </div>
