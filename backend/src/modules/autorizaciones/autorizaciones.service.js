@@ -15,10 +15,6 @@ const formatearHora = (d) =>
 // ⭐ SEGURIDAD: Helpers de control de acceso por rol ANFITRION
 // =============================================================================
 
-/**
- * Devuelve los datos del usuario (roles + id_persona) desde la BD.
- * Es más seguro que confiar solo en el JWT, porque los roles pueden cambiar.
- */
 const cargarUsuarioCompleto = async (username) => {
   const { rows } = await query(
     `SELECT
@@ -43,19 +39,11 @@ const cargarUsuarioCompleto = async (username) => {
   return rows[0];
 };
 
-/**
- * Verifica si un usuario es "solo anfitrión"
- * (su único rol activo es ANFITRION).
- */
 const esSoloAnfitrion = (usuario) => {
   const roles = usuario.roles || [];
   return roles.length === 1 && roles.includes('ANFITRION');
 };
 
-/**
- * Valida que el id_anfitrion sea la persona vinculada al usuario
- * (si es solo anfitrión). Pensado para `actualizar`.
- */
 const validarAnfitrionPermitidoPorId = (usuario, idAnfitrion) => {
   if (!esSoloAnfitrion(usuario)) return;
 
@@ -78,10 +66,6 @@ const validarAnfitrionPermitidoPorId = (usuario, idAnfitrion) => {
   }
 };
 
-/**
- * Valida que el usuario pueda operar sobre una autorización existente.
- * Un anfitrión solo puede operar sobre las suyas.
- */
 const validarAccesoAAutorizacion = (usuario, autorizacion) => {
   if (!esSoloAnfitrion(usuario)) return;
 
@@ -108,9 +92,8 @@ const validarAccesoAAutorizacion = (usuario, autorizacion) => {
  * Resuelve la persona del anfitrión:
  *   - Si el usuario es SOLO ANFITRION → desde usuario.id_persona
  *   - Si el usuario es ADMIN/OPERADOR → desde payload.anfitrion (documento)
- *
- * @returns {Promise<Object>} Persona resuelta
- * @throws 400/403/404/409 según el caso
+ *     ⭐ EXCEPCIÓN: un OPERADOR/ADMIN puede usar SU PROPIA persona como anfitrión
+ *        aunque no esté marcada con es_anfitrion = true (para el prefill del frontend).
  */
 const resolverAnfitrion = async (usuario, payload) => {
   // --- Caso A: usuario solo ANFITRION ---
@@ -169,7 +152,15 @@ const resolverAnfitrion = async (usuario, payload) => {
     );
   }
 
-  if (!persona.es_anfitrion) {
+  // ⭐ Un OPERADOR/ADMIN puede usar SU PROPIA persona como anfitrión,
+  //    aunque no esté marcada con es_anfitrion = true.
+  const esPropioUsuario =
+    usuario.id_persona != null &&
+    Number(usuario.id_persona) === Number(persona.id);
+  const tieneRolAutoautorizado =
+    (usuario.roles || []).some((r) => ['ADMIN', 'OPERADOR'].includes(r));
+
+  if (!persona.es_anfitrion && !(esPropioUsuario && tieneRolAutoautorizado)) {
     throw Object.assign(
       new Error(`La persona ${persona.nombres} ${persona.primer_apellido} NO está marcada como anfitrión.`),
       { status: 409, code: 'PERSONA_NO_ES_ANFITRION' }
@@ -189,15 +180,12 @@ const resolverAnfitrion = async (usuario, payload) => {
 // =============================================================================
 // CREAR
 // =============================================================================
-// =============================================================================
-// CREAR
-// =============================================================================
 export const crear = async (payload, userId) => {
-  // 1) Cargar usuario y resolver anfitrión (con guard de seguridad)
+  // 1) Cargar usuario y resolver anfitrión
   const usuario = await cargarUsuarioCompleto(userId);
   const anfitrion = await resolverAnfitrion(usuario, payload);
 
-  // 2) Resolver visitante (obtenerOCrear — sí se autocrea si no existe)
+  // 2) Resolver visitante
   const { persona: visitante } = await obtenerOCrear(payload.visitante, userId);
 
   if (visitante.es_anfitrion) {
@@ -217,10 +205,10 @@ export const crear = async (payload, userId) => {
   if (fin <= ini)
     throw Object.assign(new Error('fecha_fin debe ser mayor que fecha_inicio'), { status: 400 });
 
-  // 4) Validar horario y días permitidos
+  // 4) Validar horario (⭐ pasa es_excepcion)
   await validarRangoHorario(ini, fin, payload.es_excepcion);
 
-  // 5) Validar solapamiento (visitante)
+  // 5) Validar solapamiento
   await validarSinSolapamiento({
     idPersona: visitante.id,
     fechaInicio: ini,
@@ -233,7 +221,10 @@ export const crear = async (payload, userId) => {
   const duracionMin = (fin.getTime() - ini.getTime()) / 60000;
 
   if (duracionMin < minMin)
-    throw Object.assign(new Error(`La duración mínima es ${minMin} minuto(s)`), { status: 400 });
+    throw Object.assign(
+      new Error(`La duración mínima de una visita es ${minMin} minuto(s)`),
+      { status: 400 }
+    );
 
   // ⭐ LÓGICA DE EXCEPCIÓN
   if (duracionMin > maxHoras * 60) {
@@ -244,13 +235,11 @@ export const crear = async (payload, userId) => {
       );
     }
 
-    // Validar que el usuario tenga el rol adecuado (ADMIN u OPERADOR)
     const rolesPermitidos = ['ADMIN', 'OPERADOR'];
     if (!usuario.roles.some(r => rolesPermitidos.includes(r))) {
-       throw Object.assign(new Error('No tienes permiso para crear autorizaciones excepcionales.'), { status: 403 });
+      throw Object.assign(new Error('No tienes permiso para crear autorizaciones excepcionales.'), { status: 403 });
     }
 
-    // Validar que haya justificado el motivo
     if (!payload.motivo_excepcion || payload.motivo_excepcion.trim() === '') {
       throw Object.assign(new Error('El motivo de la excepción es obligatorio.'), { status: 400 });
     }
@@ -259,12 +248,13 @@ export const crear = async (payload, userId) => {
   // 7) Estado inicial
   const estadoInicial = await getValor('ESTADO_AUTORIZACION_DEFAULT', 'APROBADA');
 
-  // 8) Insertar
+  // 8) Insertar (⭐ incluye es_excepcion y motivo_excepcion)
   const codigo = generarCodigo('AUT');
   const { rows } = await query(
     `INSERT INTO autorizacion
        (codigo, id_persona, id_lugar, id_anfitrion, motivo,
-        fecha_inicio, fecha_fin, observaciones, estado, creado_por, es_excepcion, motivo_excepcion)
+        fecha_inicio, fecha_fin, observaciones, estado, creado_por,
+        es_excepcion, motivo_excepcion)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING *`,
     [
@@ -279,7 +269,7 @@ export const crear = async (payload, userId) => {
       estadoInicial,
       userId,
       payload.es_excepcion || false,
-      payload.motivo_excepcion || null
+      payload.motivo_excepcion || null,
     ]
   );
   return rows[0];
@@ -291,7 +281,6 @@ export const crear = async (payload, userId) => {
 export const actualizar = async (id, datos, userId) => {
   const actual = await obtenerPorId(id);
 
-  // ⭐ SEGURIDAD
   const usuario = await cargarUsuarioCompleto(userId);
   validarAccesoAAutorizacion(usuario, actual);
 
@@ -314,7 +303,17 @@ export const actualizar = async (id, datos, userId) => {
   if (fin <= ini)
     throw Object.assign(new Error('fecha_fin debe ser mayor que fecha_inicio'), { status: 400 });
 
-  await validarRangoHorario(ini, fin, datos.es_excepcion ?? actual.es_excepcion);
+  // ⭐ Determinar es_excepcion y motivo finales
+  const esExcepcionFinal =
+    datos.es_excepcion !== undefined
+      ? datos.es_excepcion
+      : (actual.es_excepcion || false);
+  const motivoExcepcionFinal =
+    datos.es_excepcion !== undefined
+      ? (datos.es_excepcion ? (datos.motivo_excepcion || null) : null)
+      : (actual.motivo_excepcion || null);
+
+  await validarRangoHorario(ini, fin, esExcepcionFinal);
 
   await validarSinSolapamiento({
     idPersona: actual.id_persona,
@@ -328,19 +327,24 @@ export const actualizar = async (id, datos, userId) => {
   const duracionMin = (fin.getTime() - ini.getTime()) / 60000;
 
   if (duracionMin < minMin)
-    throw Object.assign(new Error(`La duración mínima es ${minMin} minuto(s)`), { status: 400 });
+    throw Object.assign(
+      new Error(`La duración mínima de una visita es ${minMin} minuto(s)`),
+      { status: 400 }
+    );
 
   // ⭐ LÓGICA DE EXCEPCIÓN AL ACTUALIZAR
-
-    // Lógica de excepción en actualizar
-  let esExcepcionFinal = actual.es_excepcion || false;
-  let motivoExcepcionFinal = actual.motivo_excepcion || null;
-
-  if (datos.es_excepcion !== undefined) {
-    esExcepcionFinal = datos.es_excepcion;
-    motivoExcepcionFinal = datos.es_excepcion ? datos.motivo_excepcion : null;
-    
-    if (esExcepcionFinal && (!motivoExcepcionFinal || motivoExcepcionFinal.trim() === '')) {
+  if (duracionMin > maxHoras * 60) {
+    if (!esExcepcionFinal) {
+      throw Object.assign(
+        new Error(`La duración máxima permitida es ${maxHoras} hora(s). Marca excepción si necesitas autorizarla.`),
+        { status: 400 }
+      );
+    }
+    const rolesPermitidos = ['ADMIN', 'OPERADOR'];
+    if (!usuario.roles.some(r => rolesPermitidos.includes(r))) {
+      throw Object.assign(new Error('No tienes permiso para autorizaciones excepcionales.'), { status: 403 });
+    }
+    if (!motivoExcepcionFinal || motivoExcepcionFinal.trim() === '') {
       throw Object.assign(new Error('El motivo de la excepción es obligatorio.'), { status: 400 });
     }
   }
@@ -517,7 +521,6 @@ export const cambiarEstado = async (id, nuevoEstado, userId) => {
   if (!actual)
     throw Object.assign(new Error('Autorización no encontrada'), { status: 404 });
 
-  // ⭐ SEGURIDAD
   const usuario = await cargarUsuarioCompleto(userId);
   validarAccesoAAutorizacion(usuario, actual);
 
@@ -637,10 +640,6 @@ export const verificarDisponibilidad = async ({
   };
 };
 
-
-
-
-
 // =============================================================================
 // VERIFICAR (por código)
 // =============================================================================
@@ -650,7 +649,6 @@ export const verificar = async (codigo, puntoAcceso, userId) => {
 
   const minGraciaIn  = await getValor('MINUTOS_GRACIA_INGRESO', 0);
   const minGraciaOut = await getValor('MINUTOS_GRACIA_SALIDA', 0);
-  // ⭐ NUEVO: parámetro de permanencia mínima
   const minPermanencia = await getValor('MINUTOS_MINIMOS_PERMANENCIA', 5);
 
   const ahora         = new Date();
@@ -678,18 +676,15 @@ export const verificar = async (codigo, puntoAcceso, userId) => {
   else {
     const tipo = aut.fecha_ingreso_real && !aut.fecha_salida_real ? 'SALIDA' : 'INGRESO';
 
-        if (tipo === 'SALIDA') {
-      // Validar tiempo mínimo de permanencia
+    if (tipo === 'SALIDA') {
       const ingreso = new Date(aut.fecha_ingreso_real);
       const diffMinutos = (ahora.getTime() - ingreso.getTime()) / 60000;
 
       if (diffMinutos < minPermanencia) {
         const faltan = Math.ceil(minPermanencia - diffMinutos);
-        // ⭐ NUEVO ESTADO: VISITA_EN_CURSO (en lugar de DENEGADO)
-        resultado = 'VISITA_EN_CURSO'; 
+        resultado = 'VISITA_EN_CURSO';
         motivo = `El visitante ingresó a las ${fmt(aut.fecha_ingreso_real)}. Por seguridad, debe permanecer al menos ${minPermanencia} minutos. Faltan ${faltan} min para habilitar la salida.`;
       } else {
-        // Registrar SALIDA
         await query(
           `UPDATE autorizacion
               SET fecha_salida_real = NOW(),
@@ -711,7 +706,6 @@ export const verificar = async (codigo, puntoAcceso, userId) => {
         motivo = tipo;
       }
     } else {
-      // Registrar INGRESO
       await query(
         `UPDATE autorizacion
             SET fecha_ingreso_real = NOW(),
@@ -737,9 +731,6 @@ export const verificar = async (codigo, puntoAcceso, userId) => {
   const actualizada = await obtenerPorId(aut.id);
   return { resultado, motivo, autorizacion: actualizada };
 };
-
-
-
 
 // =============================================================================
 // VERIFICAR (por documento)
@@ -900,7 +891,6 @@ export const expirarVencidasRapido = async () => {
 export const finalizarVisita = async (id, { fecha_salida_real, observacion }, userId) => {
   const aut = await obtenerPorId(id);
 
-  // ⭐ SEGURIDAD
   const usuario = await cargarUsuarioCompleto(userId);
   validarAccesoAAutorizacion(usuario, aut);
 
