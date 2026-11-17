@@ -67,7 +67,7 @@ export default function Login() {
                 Sistema de Visitas
               </h1>
               <p className="mt-1 text-xs text-amber-100/70 leading-snug">
-                Cámara de Senadores · Estado Plurinacional de Bolivia
+                Cámara de Senadores
               </p>
             </div>
 

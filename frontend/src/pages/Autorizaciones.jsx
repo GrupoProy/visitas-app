@@ -311,9 +311,22 @@ export default function Autorizaciones() {
               {!loading && lista.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50/70">
                   <td className="px-4 py-3">
-                    <span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700">
-                      {a.codigo}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {/* Código */}
+                      <span className="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        {a.codigo}
+                      </span>
+
+                      {/* ⭐ Etiqueta de Excepción */}
+                      {a.es_excepcion && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-700 cursor-help"
+                          title={`Motivo: ${a.motivo_excepcion || 'No especificado'}`}
+                        >
+                          <AlertTriangle size={10} /> Excepción
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">

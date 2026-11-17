@@ -231,7 +231,7 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
   // ⭐ ¿Es un usuario con rol EXCLUSIVO ANFITRION?
   const esSoloAnfitrion =
     usuario?.roles?.length === 1 && usuario.roles.includes('ANFITRION');
-  const esOperador = usuario?.roles?.includes('OPERADOR');
+
   const [visitante, setVisitante] = useState(vacioPersona);
   const [existeVisitante, setExisteVisitante] = useState(null);
 
@@ -254,6 +254,9 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
   const [enviando, setEnviando] = useState(false);
   const [conflicto, setConflicto] = useState(null);
 
+  const [esExcepcion, setEsExcepcion] = useState(false);
+  const [motivoExcepcion, setMotivoExcepcion] = useState('');
+
   const cfgSafe = useMemo(
     () => ({
       HORARIO_VISITA_INICIO: cfg.HORARIO_VISITA_INICIO || '08:30',
@@ -263,14 +266,41 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
       TELEFONO_LONGITUD: cfg.TELEFONO_LONGITUD || 7,
       DOCUMENTO_LONGITUD_MIN: cfg.DOCUMENTO_LONGITUD_MIN || 5,
       DOCUMENTO_LONGITUD_MAX: cfg.DOCUMENTO_LONGITUD_MAX || 10,
+      DURACION_MAX_VISITA_HORAS: cfg.DURACION_MAX_VISITA_HORAS || 12,
     }),
     [cfg]
   );
 
-  // ---------------------------------------------------------------------
-  // Cargar catálogos (lugares + anfitriones)
-  // ---------------------------------------------------------------------
-    useEffect(() => {
+  // ⭐ Calcular si requiere excepción
+  const requiereExcepcion = useMemo(() => {
+    if (!form.fecha_inicio || !form.fecha_fin) return false;
+    
+    const ini = new Date(form.fecha_inicio);
+    const fin = new Date(form.fecha_fin);
+    
+    const [hIni, mIni] = cfgSafe.HORARIO_VISITA_INICIO.split(':').map(Number);
+    const [hFin, mFin] = cfgSafe.HORARIO_VISITA_FIN.split(':').map(Number);
+    const iniMinutos = ini.getHours() * 60 + ini.getMinutes();
+    const finMinutos = fin.getHours() * 60 + fin.getMinutes();
+    
+    const fueraDeHorario = iniMinutos < (hIni * 60 + mIni) || finMinutos > (hFin * 60 + mFin);
+
+    const duracionHoras = (fin.getTime() - ini.getTime()) / 3600000;
+    const excedeDuracion = duracionHoras > cfgSafe.DURACION_MAX_VISITA_HORAS;
+
+    return fueraDeHorario || excedeDuracion;
+  }, [form.fecha_inicio, form.fecha_fin, cfgSafe]);
+
+  // Si deja de requerir excepción, limpiamos los campos
+  useEffect(() => {
+    if (!requiereExcepcion) {
+      setEsExcepcion(false);
+      setMotivoExcepcion('');
+    }
+  }, [requiereExcepcion]);
+
+  // Cargar catálogos
+  useEffect(() => {
     setCargandoCatalogos(true);
     Promise.all([
       api.get('/lugares', { params: { limit: 100 } }),
@@ -280,18 +310,8 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
     ])
       .then(([rLugares, rAnfitriones]) => {
         const activos = rLugares.data.data.items.filter((l) => l.estado === 'ACTIVO');
-        let afs = rAnfitriones.data.data || [];
-
-        // ⭐ Si es OPERADOR y tiene persona vinculada, incluirla en la lista
-        if (esOperador && usuario?.persona) {
-          const existe = afs.find((a) => a.id === usuario.persona.id);
-          if (!existe && usuario.persona.es_anfitrion) {
-            afs = [usuario.persona, ...afs];
-          }
-        }
-
         setLugares(activos);
-        setAnfitriones(afs);
+        setAnfitriones(rAnfitriones.data.data || []);
         if (activos.length > 0) {
           setForm((f) => (f.id_lugar ? f : { ...f, id_lugar: String(activos[0].id) }));
         }
@@ -301,31 +321,25 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------------------------------------------------------------
-  // Auto-asignar anfitrión cuando el usuario es solo ANFITRION
-  // ---------------------------------------------------------------------
-    useEffect(() => {
-    if (esSoloAnfitrion) {
-      const persona = usuario?.persona;
-      if (!persona) {
-        toast.error('Tu usuario no está vinculado a una persona. Contacta al administrador.');
-        return;
-      }
-      setIdAnfitrion(String(persona.id));
-      setAnfitrionAutoAsignado({
-        id: persona.id,
-        nombre: nombreCompleto(persona),
-      });
-    } else if (esOperador && usuario?.persona) {
-      // ⭐ Operador: por defecto se autoasigna a sí mismo, pero puede cambiarlo
-      setIdAnfitrion(String(usuario.persona.id));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [esSoloAnfitrion, esOperador, usuario]);
+  // Auto-asignar anfitrión
+  useEffect(() => {
+    if (!esSoloAnfitrion) return;
 
-  // ---------------------------------------------------------------------
+    const persona = usuario?.persona;
+    if (!persona) {
+      toast.error('Tu usuario no está vinculado a una persona. Contacta al administrador.');
+      return;
+    }
+
+    setIdAnfitrion(String(persona.id));
+    setAnfitrionAutoAsignado({
+      id: persona.id,
+      nombre: nombreCompleto(persona),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esSoloAnfitrion, usuario?.persona]);
+
   // Verificar solapamiento
-  // ---------------------------------------------------------------------
   useEffect(() => {
     let cancelado = false;
     const verificar = async () => {
@@ -359,9 +373,7 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.fecha_inicio, form.fecha_fin, existeVisitante?.id]);
 
-  // ---------------------------------------------------------------------
   // Validación
-  // ---------------------------------------------------------------------
   const validar = () => {
     const errs = {};
 
@@ -387,21 +399,24 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
     if (!form.id_lugar) errs.id_lugar = 'Selecciona un lugar';
     if (!form.motivo.trim()) errs.motivo = 'El motivo es obligatorio';
 
-    const errHorario = validarRangoHorario(form.fecha_inicio, form.fecha_fin, {
-      inicio: cfgSafe.HORARIO_VISITA_INICIO,
-      fin: cfgSafe.HORARIO_VISITA_FIN,
-      diasPermitidos: cfgSafe.DIAS_VISITA_PERMITIDOS,
-      diasFeriados: cfgSafe.DIAS_FERIADOS,
-    });
-    if (errHorario) errs.fecha_inicio = errHorario;
+    // ⭐ Solo validamos el horario si NO es una excepción
+    if (!esExcepcion) {
+      const errHorario = validarRangoHorario(form.fecha_inicio, form.fecha_fin, {
+        inicio: cfgSafe.HORARIO_VISITA_INICIO,
+        fin: cfgSafe.HORARIO_VISITA_FIN,
+        diasPermitidos: cfgSafe.DIAS_VISITA_PERMITIDOS,
+        diasFeriados: cfgSafe.DIAS_FERIADOS,
+      });
+      if (errHorario) errs.fecha_inicio = errHorario;
+    } else if (!motivoExcepcion.trim()) {
+      errs.motivoExcepcion = 'El motivo de la excepción es obligatorio';
+    }
 
     setErrores(errs);
     return Object.keys(errs).length === 0;
   };
 
-  // ---------------------------------------------------------------------
   // Submit
-  // ---------------------------------------------------------------------
   const submit = async (e) => {
     e.preventDefault();
 
@@ -486,34 +501,28 @@ export default function NuevaAutorizacion({ onCreada, onCancel }) {
           };
 
       const payload = {
-  visitante: datosVisitante,
-  id_lugar: Number(form.id_lugar),
-  motivo: form.motivo.trim(),
-  fecha_inicio: new Date(form.fecha_inicio).toISOString(),
-  fecha_fin: new Date(form.fecha_fin).toISOString(),
-  observaciones: form.observaciones.trim() || null,
-};
+        visitante: datosVisitante,
+        id_lugar: Number(form.id_lugar),
+        motivo: form.motivo.trim(),
+        fecha_inicio: new Date(form.fecha_inicio).toISOString(),
+        fecha_fin: new Date(form.fecha_fin).toISOString(),
+        observaciones: form.observaciones.trim() || null,
+        es_excepcion: esExcepcion,
+        motivo_excepcion: esExcepcion ? motivoExcepcion : null,
+      };
 
-// Solo si NO es solo anfitrión: enviar los datos del anfitrión
-// (admin/operador seleccionan a quién asignar la visita)
-if (!esSoloAnfitrion) {
-  if (!af) {
-    toast.error('Seleccioná un anfitrión');
-    return;
-  }
-  payload.anfitrion = {
-    tipo_documento: af.tipo_documento,
-    numero_documento: af.numero_documento,
-    nombres: af.nombres,
-    primer_apellido: af.primer_apellido,
-    segundo_apellido: af.segundo_apellido || null,
-    email: af.email || null,
-    procedencia: af.procedencia || null,
-    es_anfitrion: true,
-  };
-}
-
-      console.log('📤 Payload a enviar:', payload);
+      if (!esSoloAnfitrion) {
+        payload.anfitrion = {
+          tipo_documento: af.tipo_documento,
+          numero_documento: af.numero_documento,
+          nombres: af.nombres,
+          primer_apellido: af.primer_apellido,
+          segundo_apellido: af.segundo_apellido || null,
+          email: af.email || null,
+          procedencia: af.procedencia || null,
+          es_anfitrion: true,
+        };
+      }
 
       await api.post('/autorizaciones', payload);
       toast.success('Autorización registrada correctamente');
@@ -527,20 +536,13 @@ if (!esSoloAnfitrion) {
     }
   };
 
-    const reset = () => {
+  const reset = () => {
     setVisitante(vacioPersona);
     setExisteVisitante(null);
-    
-    // Mantener el anfitrión por defecto si es Operador
-    if (esSoloAnfitrion) {
-      // El autoasignado se mantiene
-    } else if (esOperador && usuario?.persona) {
-      setIdAnfitrion(String(usuario.persona.id));
-    } else {
-      setIdAnfitrion('');
-    }
-
+    if (!esSoloAnfitrion) setIdAnfitrion('');
     setConflicto(null);
+    setEsExcepcion(false);
+    setMotivoExcepcion('');
     setForm({
       id_lugar: lugares[0] ? String(lugares[0].id) : '',
       motivo: '',
@@ -711,8 +713,8 @@ if (!esSoloAnfitrion) {
             min={ahoraLocal()}
             diasPermitidos={cfgSafe.DIAS_VISITA_PERMITIDOS}
             feriados={cfgSafe.DIAS_FERIADOS}
-            horaInicio={cfgSafe.HORARIO_VISITA_INICIO}
-            horaFin={cfgSafe.HORARIO_VISITA_FIN}
+            horaInicio="00:00"
+            horaFin="23:59"
             pasoMinutos={15}
             error={errores.fecha_inicio}
           />
@@ -724,11 +726,60 @@ if (!esSoloAnfitrion) {
             min={form.fecha_inicio || ahoraLocal()}
             diasPermitidos={cfgSafe.DIAS_VISITA_PERMITIDOS}
             feriados={cfgSafe.DIAS_FERIADOS}
-            horaInicio={cfgSafe.HORARIO_VISITA_INICIO}
-            horaFin={cfgSafe.HORARIO_VISITA_FIN}
+            horaInicio="00:00"
+            horaFin="23:59"
             pasoMinutos={15}
             error={errores.fecha_fin}
           />
+
+          {/* UI DE EXCEPCIÓN INTELIGENTE */}
+          {requiereExcepcion && (
+            <div className="md:col-span-2 mt-2">
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 text-amber-600 dark:text-amber-500" size={20} />
+                  <div className="flex-1">
+                    <p className="font-semibold text-amber-900 dark:text-amber-200">
+                      Esta visita excede los límites permitidos
+                    </p>
+                    <p className="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                      Has seleccionado un horario fuera del permitido o una duración mayor a {cfgSafe.DURACION_MAX_VISITA_HORAS} horas.
+                      Para continuar, debes registrar esto como una excepción.
+                    </p>
+                    
+                    <label className="flex items-center gap-2 mt-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={esExcepcion}
+                        onChange={(e) => {
+                          setEsExcepcion(e.target.checked);
+                          if (!e.target.checked) setMotivoExcepcion('');
+                        }}
+                        className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <span className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                        Autorizar como excepción
+                      </span>
+                    </label>
+
+                    {esExcepcion && (
+                      <div className="mt-3">
+                        <Textarea
+                          label="Motivo de la excepción *"
+                          placeholder="Explica brevemente por qué se autoriza esta excepción..."
+                          rows={2}
+                          value={motivoExcepcion}
+                          onChange={(e) => setMotivoExcepcion(e.target.value)}
+                          error={errores.motivoExcepcion}
+                          required
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="md:col-span-2">
             <Textarea

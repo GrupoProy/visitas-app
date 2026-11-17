@@ -2,16 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================
+   ESTILOS BASE
+   ========================================================== */
 @layer base {
-  html {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+  html, body, #root {
+    @apply h-full min-h-screen;
   }
 
   body {
-    @apply min-h-screen;
+    @apply bg-slate-100 text-slate-800 antialiased dark:bg-slate-950 dark:text-slate-100;
+    font-family: 'Inter', system-ui, sans-serif;
   }
 
-  /* Color de fondo al hacer scroll */
+  /* Scrollbar sutil */
   ::-webkit-scrollbar {
     @apply w-2 h-2;
   }
@@ -25,17 +29,32 @@
     @apply bg-slate-400 dark:bg-slate-600;
   }
 }
-html, body, #root {
-  height: 100%;
+
+/* ==========================================================
+   FORZAR TEXTOS CLAROS EN MODO OSCURO (GLOBAL)
+   Esto soluciona el problema en TODAS las páginas
+   ========================================================== */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-slate-700 {
+  color: #f8fafc !important; /* slate-50 (blanco roto) */
 }
 
-body {
-  @apply bg-slate-100 text-slate-800 antialiased;
-  font-family: 'Inter', system-ui, sans-serif;
+.dark .text-slate-600 {
+  color: #cbd5e1 !important; /* slate-300 (gris claro) */
 }
 
-/* Scrollbar sutil */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark .text-slate-500 {
+  color: #94a3b8 !important; /* slate-400 (gris medio) */
+}
 
+/* Para los encabezados de las tablas (th) */
+.dark th {
+  color: #cbd5e1 !important; 
+}
+
+/* Excepción: mantener los textos blancos que están sobre fondos guindos */
+.dark .bg-guindo .text-white,
+.dark .bg-guindo .text-slate-100 {
+  color: #ffffff !important;
+}
